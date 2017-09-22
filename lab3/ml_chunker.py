@@ -31,7 +31,7 @@ def extract_features(sentences, w_size, feature_names):
     return X_l, y_l
 
 
-def extract_features_sent(sentence, w_size, feature_names):
+def extract_features_sent(sentence, w_size, feature_names, prediction=False):
     """
     Extract the features from one sentence
     returns X and y, where X is a list of dictionaries and
@@ -66,19 +66,23 @@ def extract_features_sent(sentence, w_size, feature_names):
         # x is a row of X
         x = list()
         # The words in lower case
-        #for j in range(2 * w_size + 1):
-        #    x.append(padded_sentence[i + j][0].lower())
+        for j in range(2 * w_size + 1):
+            x.append(padded_sentence[i + j][0].lower())
+
         # The POS
         for j in range(2 * w_size + 1):
             x.append(padded_sentence[i + j][1])
+
         # The chunks (Up to the word)
-        """
         for j in range(w_size):
-            feature_line.append(padded_sentence[i + j][2])
-        """
-        # We represent the feature vector as a dictionary
+            if not prediction:
+                x.append(padded_sentence[i + j][2])
+            else:
+                x.append("")
+
+
+
         to_add = dict(zip(feature_names, x))
-        #print(to_add)
         X.append(to_add)
         # The classes are stored in a list
         y.append(padded_sentence[i + w_size][2])
@@ -126,15 +130,25 @@ def encode_classes(y_symbols):
 
 
 def predict(test_sentences, feature_names, f_out):
+    # Predict word by word.
+    # But only a prepredict or no?
+
     for test_sentence in test_sentences:
-        X_test_dict, y_test_symbols = extract_features_sent(test_sentence, w_size, feature_names)
-        # Vectorize the test sentence and one hot encoding
-        X_test = vec.transform(X_test_dict)
-        # Predicts the chunks and returns numbers
-        y_test_predicted = classifier.predict(X_test)
-        # Converts to chunk names
-        y_test_predicted_symbols = list(dict_classes[i] for i in y_test_predicted)
-        # Appends the predicted chunks as a last column and saves the rows
+        # Predict window by window
+        # for word in test_sentence.split():
+        X_test_dict, y_test_symbols = extract_features_sent(test_sentence, w_size, feature_names, True)
+        chunk_n1 = "BOS"
+        chunk_n2 = "BOS"
+        y_test_predicted_symbols = []
+        for x in X_test_dict:
+            x['chunk_n1'] = chunk_n2        # Accidental flip because of how for-loops works.
+            x['chunk_n2'] = chunk_n1
+            prediction = vec.transform([x])
+            chunk_name = dict_classes[classifier.predict(prediction[0])[0]]
+            y_test_predicted_symbols.append(chunk_name)
+            chunk_n2 = chunk_n1
+            chunk_n1 = chunk_name
+
         rows = test_sentence.splitlines()
         rows = [rows[i] + ' ' + y_test_predicted_symbols[i] for i in range(len(rows))]
         for row in rows:
@@ -143,13 +157,28 @@ def predict(test_sentences, feature_names, f_out):
     f_out.close()
 
 
+# Vectorize the test sentence and one hot encoding
+# X_test = vec.transform(X_test_dict)
+
+# Predicts the chunks and returns numbers
+# y_test_predicted = classifier.predict(X_test)
+
+# Converts to chunk names
+# y_test_predicted_symbols = list(dict_classes[i] for i in y_test_predicted)
+# Check for y_predict and then input to X?
+# 2 ord innan
+# samma ord 2 ggr innan
+
+# Appends the predicted chunks as a last column and saves the rows
+
+
 if __name__ == '__main__':
     start_time = time.clock()
     train_corpus = 'train.txt'
     test_corpus = 'test.txt'
     w_size = 2  # The size of the context window to the left and right of the word
     feature_names = ['word_n2', 'word_n1', 'word', 'word_p1', 'word_p2',
-                     'pos_n2', 'pos_n1', 'pos', 'pos_p1', 'pos_p2']
+                     'pos_n2', 'pos_n1', 'pos', 'pos_p1', 'pos_p2', "chunk_n1", "chunk_n2"]  # TODO insert
 
     train_sentences = conll_reader.read_sentences(train_corpus)
 
@@ -170,6 +199,8 @@ if __name__ == '__main__':
     print("Training the model...")
     # TODO Change this to decision tree and fisher or perceptron.
     classifier = linear_model.LogisticRegression(penalty='l2', dual=True, solver='liblinear')
+    #classifier = linear_model.Perceptron(penalty='l2', n_jobs=-1)
+    #classifier = tree.DecisionTreeClassifier() #TODO insert correct
     model = classifier.fit(X, y)
     print(model)
 
